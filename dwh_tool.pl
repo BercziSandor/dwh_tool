@@ -46,6 +46,10 @@ sub parseDdlFile
                 $activeBlock = "tableCreation";
                 $target      = lc( $1 );
                 $index       = 0;
+                if (defined $data->{ddl}->{$target}){
+                	die "The ddl for the table $target already loaded, aborting.\n";
+                	$data->{ddl}->{$target}=();
+                }
 
                 # print "activeBlock: '$target'\n";
             } elsif ( 1 ) {
@@ -112,6 +116,12 @@ sub parseDdlFile
 } ### sub parseDdlFile
 
 #****
+
+sub resetData
+{
+    print "Cleanup of data loaded.\n";
+    $data->{ddl} = ();
+}
 
 #****f* dwh_tool/checkRow
 # NAME
@@ -231,7 +241,7 @@ sub checkCSVFile
 {
     my ( $controlFileName ) = @_;
 
-    my $errCnt=0;
+    my $errCnt = 0;
 
     open my $controlFile, "<$controlFileName" or die "'$controlFileName': $!\n";
 
@@ -239,7 +249,8 @@ sub checkCSVFile
     $table =~ s/d\d+(.*)\.dat/$1/;
 
     print( "checkCSVFile($controlFileName, $table)\n" );
-    open my $errorFile, ">${controlFileName}.error" or die "'${controlFileName}.error': $!\n";
+    my $errorFileName = "${controlFileName}.error";
+    open my $errorFile, ">${errorFileName}" or die "'${errorFileName}': $!\n";
 
     while ( my $line = <$controlFile> ) {
         $line =~ s/\R//;    # strip line end
@@ -261,12 +272,20 @@ sub checkCSVFile
     } ### while ( my $line = <$controlFile>)
     close $errorFile;
     close $controlFile;
+    if ( $errCnt == 0 ) {
+        print "There is NO error in the file $controlFileName.\n";
+    } elsif ( $errCnt == 1 ) {
+        print "There is an error in the file $controlFileName. You can see the incorrect row here: $errorFileName\n";
+    } else {
+        print "There are $errCnt errors in the file $controlFileName. You can see the incorrect row(s) here: $errorFileName\n";
+    }
+
     return $errCnt;
 } ### sub checkCSVFile
 
 #****
 
-# DESCRIPTION
+# DESCRIPTION./
 #   It reads the given file and calls checkRow for every row. Comment: The table name will be calculated from the name of the file.
 # INPUTS
 #   input file -- the input (CSV) file to be validated
@@ -506,6 +525,9 @@ sub iniLoad
 # SOURCE
 sub demo
 {
+    print "\n*********************** DEMO *****************\n";
+    resetData();
+    print "\n1: ***********************\n";
     parseDdlFile( "input/a_export_strg.ddl" );
 
     my $row = parseInputRecord( "a_export_strg", "input/demo_input_a_export_strg.dat" );
@@ -514,15 +536,23 @@ sub demo
     } else {
         print "Row seems to be valid.\n";
     }
+    resetData();
     print "\n";
 
+    print "\n2: ***********************\n";
     parseDdlFile( "input/a_batch_input.ddl" );
     checkCSVFile( 'input/d063a_batch_input.dat' );
+    resetData();
 
+    print "\n3: ***********************\n";
     parseDdlFile( "input/a_batch_input.ddl" );
     checkCSVFile( 'input/d063a_batch_input.dat' );
+    resetData();
+
+    print "\nEnd of demo ***********************\n";
 
     #****
+    exit 0;
 
 } ### sub demo
 
