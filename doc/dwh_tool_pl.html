@@ -1,0 +1,674 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+                      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html  xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<meta http-equiv="Content-Style-Type" content="text/css" />
+<meta http-equiv="Content-type" content="text/html; charset=ISO-8859-1" />
+<link rel="stylesheet" href="./robodoc.css" type="text/css" />
+<title>./dwh_tool.pl</title>
+<!-- Source: ./dwh_tool.pl -->
+<!-- Generated with ROBODoc Version 4.99.43 (Jun  1 2015) -->
+</head>
+<body>
+<div id="logo">
+<a name="robo_top_of_doc"></a>
+</div> <!-- logo -->
+<div id="navigation">
+<a class="menuitem" href="./toc_index.html#top">Table of Contents</a>
+<a class="menuitem" href="./robo_sourcefiles.html#top">Sourcefiles</a>
+<a class="menuitem" href="./masterindex.html#top">Index</a>
+<a class="menuitem" href="./robo_functions.html#top">Functions</a>
+<a class="menuitem" href="./robo_variables.html#top">Variables</a>
+</div> <!-- navigation -->
+<div id="content">
+<hr />
+<a name="dwh5ftool2fcheckCSVFile"></a>
+<a name="robo0"></a><h2>dwh_tool/checkCSVFile [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>checkCSVFile</strong>
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre>   It reads the given file and calls <a href="#robo1">checkRow</a> for every row. Comment: The table name will be calculated from the name of the file.
+</pre>
+<p class="item_name">INPUTS</p>
+<pre>   input file -- the input (CSV) file to be validated
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>checkCSVFile</strong>
+{
+    my ( $controlFileName ) = @_;
+    open my $controlFile, "&lt;$controlFileName" or die "'$controlFileName': $!\n";
+
+    my $table = basename( $controlFileName );
+    $table =~ s/d\d+(.*)\.dat/$1/;
+
+    print( "<strong>checkCSVFile</strong>($controlFileName, $table)\n" );
+    open my $errorFile, "&gt;${controlFileName}.error" or die "'${controlFileName}.error': $!\n";
+
+    while ( my $line = &lt;$controlFile&gt; ) {
+        $line =~ s/\R//;    # strip line end
+                            # my $chr=substr( $line, 16, 1 ); $line=~ s/$chr/¦/g;
+        next unless $line;
+        print "Line: $.\n" if $verbose;
+        my $separator;
+        if ( not( $separator ) ) {
+            if ( $line =~ m/"(.)"/ ) {
+                $separator = $1;
+                print "Separator in file $controlFileName: [$separator]\n" if $verbose;
+            }
+        } ### if ( not( $separator ))
+
+        if ( <a href="#robo1">checkRow</a>( $table, $line ) ) {
+            print "Errorfile write!\n";
+            print $errorFile "$line\n";
+        }
+    } ### while ( my $line = &lt;$controlFile&gt;)
+    close $errorFile;
+    close $controlFile;
+} ### sub <strong>checkCSVFile</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fcheckRow"></a>
+<a name="robo1"></a><h2>dwh_tool/checkRow [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>checkRow</strong>
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre>   It checks the given row for errors agains ddl (length, "", type, etc) and other given rules (example: validIp) defined in the <a href="#robo5">ini</a> file.
+</pre>
+<p class="item_name">INPUTS</p>
+<pre>   table -- the name of the table validate again
+   row   -- the string to be validated
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>checkRow</strong>
+{
+    my ( $table, $row ) = @_;
+    $table = lc( $table );
+    die "Table $table is not defined in the ddl files.\n" if not defined $data-&gt;{ddl}-&gt;{$table};
+    die "Row is empty\n" unless $row;
+
+    print "<strong>checkRow</strong>($table, &lt;$row&gt;)\n" if $verbose;
+    my $errCnt = 0;
+
+    my $separator = <a href="#robo4">getSeparator</a>( $table );
+    print "Separator: [$separator]\n" if $verbose;
+    $row .= "${separator}dummy";
+    my @values = split( /$separator/, $row );
+    pop @values;
+
+    die "Wrong separator [$separator] - No separator found in [$row" if ( index( $row, $separator ) == -1 );
+    if ( scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) != scalar( @values ) ) {
+
+        # print "ddl info:\n" . Dumper( $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} );
+        # print "splitted row:\n" . Dumper( @values );
+        warn "The given row does not have " . scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) . " vs: " . scalar( @values );
+    } ### if ( scalar( keys %{ $data...}))
+
+    for my $index ( 0 .. $#values ) {
+        my $value = $values[$index];
+
+        my $keyName = $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes}-&gt;{$index};
+        die "Index $index not defined for $table.\n" unless $keyName;
+        my $key = $data-&gt;{ddl}-&gt;{$table}-&gt;{names}-&gt;{$keyName};
+
+        print "\n$table.$keyName='$value'\n" if $verbose;
+
+        # char, varchar must be delimited by "
+        if ( $key-&gt;{type} eq 'char' or $key-&gt;{type} eq 'varchar' ) {
+            if ( $value ) {
+                if ( $value !~ m/^"/ ) {
+                    print "\n$table.$keyName='$value'\n" if not $verbose;
+                    print " Error: value [$value] must be surrounded by \"-s\n";
+                    $errCnt++;
+                }
+                if ( $value !~ m/"$/ ) {
+                    print "\n$table.$keyName='$value'\n" if not $verbose;
+                    print " Error: value [$value] must be surrounded by \"-s\n";
+                    $errCnt++;
+                }
+            } ### if ( $value )
+            $value =~ s/^"//;
+            $value =~ s/"$//;
+        } elsif ( $key-&gt;{type} eq 'integer' ) {
+            if ( $value =~ m/\D/ ) {
+                print "\n$table.$keyName='$value'\n" if not $verbose;
+                print " Error: value containt not only digits: [$value]\n";
+                $errCnt++;
+            }
+        } ### elsif ( $key-&gt;{type} eq 'integer')
+
+        if ( $key-&gt;{length} and $key-&gt;{length} &lt; length( $value ) ) {
+            print "\n$table.$keyName='$value'\n" if not $verbose;
+            print " Error: lenght <strong>checkRow</strong> problem: it should be maximal $key-&gt;{length} long, value ["
+              . $value . "] is "
+              . length( $value )
+              . " long.\n";
+            $errCnt++;
+        } else {
+            print " OK:    lenght <strong>checkRow</strong> (" . length( $value ) . " &lt;= $key-&gt;{length})\n" if $verbose;
+        }
+        if ( $key-&gt;{otherRestrictions} ) {
+            if ( $key-&gt;{otherRestrictions} =~ m/validIp/i ) {
+                if ( $value =~ m/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/ ) {
+                    my ( $d1, $d2, $d3, $d4 ) = ( $1, $2, $3, $4 );
+                    if ( $d1 == 0 or $d2 == 0 or $d3 == 0 or $d4 == 0 or $d1 &gt; 254 or $d2 &gt; 254 or $d3 &gt; 254 or $d4 &gt; 254 ) {
+                        print "\n$table.$keyName='$value'\n" if not $verbose;
+                        print " Error: Invalid IP: [$value]\n";
+                        $errCnt++;
+                    } else {
+                        print " OK:    valid ip [$value]\n" if $verbose;
+                    }
+                } else {
+                    print "\n$table.$keyName='$value'\n" if not $verbose;
+                    print " Error: Invalid IP: [$value]\n";
+                    $errCnt++;
+                }
+            } ### if ( $key-&gt;{otherRestrictions...})
+        } ### if ( $key-&gt;{otherRestrictions...})
+
+        # $value;
+    } ### for my $index ( 0 .. $#values)
+
+    # print Dumper( @values );
+    return $errCnt;
+} ### sub <strong>checkRow</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fdemo"></a>
+<a name="robo2"></a><h2>dwh_tool/demo [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>demo</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>demo</strong>
+{
+    <a href="#robo10">parseDdlFile</a>( "input/a_export_strg.ddl" );
+
+    my $row = <a href="#robo11">parseInputRecord</a>( "a_export_strg", "input/demo_input_a_export_strg.dat" );
+    if ( <a href="#robo1">checkRow</a>( "a_export_strg", $row ) ) {
+        warn "There might be a problem in the row, please check it.\n";
+    } else {
+        print "Row seems to be OK. ;)";
+    }
+
+    <a href="#robo10">parseDdlFile</a>( "input/a_batch_input.ddl" );
+    <a href="#robo0">checkCSVFile</a>( 'input/d063a_batch_input.dat' );
+
+    <a href="#robo10">parseDdlFile</a>( "input/a_batch_input.ddl" );
+    <a href="#robo0">checkCSVFile</a>( 'input/d063a_batch_input.dat' );
+</pre>
+
+<hr />
+<a name="dwh5ftool2fgenerateTemplate"></a>
+<a name="robo3"></a><h2>dwh_tool/generateTemplate [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>generateTemplate</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>generateTemplate</strong>
+{
+    my ( $table, $outFileName ) = @_;
+    $table = lc( $table );
+    die "Table $table is not defined in the ddl files.\n" if not defined $data-&gt;{ddl}-&gt;{$table};
+
+    open my $outFile, "&gt;$outFileName" or die "'$outFileName': $!\n";
+
+    my $maxLen = 0;
+    for my $index ( 0 .. scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) - 1 ) {
+
+        # print "ind: $index / " . scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) . "\n";
+        my $keyName = $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes}-&gt;{$index};
+        $maxLen = length( $keyName ) if $maxLen &lt; length( $keyName );
+    } ### for my $index ( 0 .. scalar...)
+
+    # print "maxl: $maxLen\n";
+
+    for my $index ( 0 .. scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) - 1 ) {
+
+        # print "ind: $index / " . scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) . "\n";
+        my $keyName = $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes}-&gt;{$index};
+        my $key     = $data-&gt;{ddl}-&gt;{$table}-&gt;{names}-&gt;{$keyName};
+        my $comment = $key-&gt;{original};
+        $comment =~ s/"$keyName"//;
+        $comment =~ s/\s*,\s*$//;
+        $comment =~ s/^\s*//;
+
+        print "$keyName: \"\" " . ' ' x ( $maxLen - length( $keyName ) + 4 ) . "# $comment\n";
+        print $outFile "$keyName: \"\" " . ' ' x ( $maxLen - length( $keyName ) + 4 ) . "# $comment\n";
+
+        # print "\n# $key-&gt;{type}($key-&gt;{length}) \n$keyName: \"\"";
+    } ### for my $index ( 0 .. scalar...)
+    close $outFile;
+} ### sub <strong>generateTemplate</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fgetSeparator"></a>
+<a name="robo4"></a><h2>dwh_tool/getSeparator [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>getSeparator</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>getSeparator</strong>
+{
+    my ( $table ) = @_;
+    $table = lc( $table );
+    my $retval;
+    $retval = $data-&gt;{_defaults}-&gt;{separator} if defined( $data-&gt;{_defaults}-&gt;{separator} );
+    $retval = $data-&gt;{$table}-&gt;{separator}    if defined( $data-&gt;{$table}-&gt;{separator} );
+    die "<strong>getSeparator</strong>($table): aborting\n" unless $retval;
+
+    # print "<strong>getSeparator</strong>($table): $retval\n";
+    return $retval;
+} ### sub <strong>getSeparator</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fini"></a>
+<a name="robo5"></a><h2>dwh_tool/ini [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>ini</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>ini</strong>
+{
+    $g_scriptDir = abs_path( dirname( __FILE__ ) );
+    <a href="#robo6">iniLoad</a>( "$g_scriptDir/dwh_tool.<strong>ini</strong>" );
+    use Getopt::Long;
+    my $help;
+    my @functions;
+    GetOptions(
+        "function|f=s{1,}" =&gt; \@functions,
+        "verbose|v"        =&gt; \$verbose,     # flag
+        "help|h"           =&gt; \$help         # flag
+    );
+
+    <a href="#robo12">usage</a>() if ( $help );
+
+    if ( scalar( @functions ) == 0 ) {
+        warn "You have to define at least one function.\n";
+        <a href="#robo12">usage</a>();
+    }
+
+    foreach my $function ( @functions ) {
+        if ( $function eq '<a href="#robo2">demo</a>' ) {
+            <a href="#robo2">demo</a>();
+        } elsif ( $function =~ m/<a href="#robo10">parseDdlFile</a>\((.*)\)/i ) {
+            <a href="#robo10">parseDdlFile</a>( $1 );
+        } elsif ( $function =~ m/<a href="#robo0">checkCSVFile</a>\((.*)\)/i ) {
+            <a href="#robo0">checkCSVFile</a>( $1 );
+        } elsif ( $function =~ m/<a href="#robo3">generateTemplate</a>\((.*),(.*)\)/i ) {
+            <a href="#robo3">generateTemplate</a>( $1, $2 );
+        } elsif ( $function =~ m/<a href="#robo11">parseInputRecord</a>\((.*),(.*)\)/i ) {
+            <a href="#robo11">parseInputRecord</a>( $1, $2 );
+        } elsif ( $function =~ m/<a href="#robo9">parseAndSaveRecord</a>\((.*),(.*),(.*)\)/i ) {
+            <a href="#robo9">parseAndSaveRecord</a>( $1, $2,$3 );
+        } else {
+            warn "Warning: Unknown function call: $function\n";
+            <a href="#robo12">usage</a>;
+        }
+    } ### foreach my $function ( @functions)
+
+} ### sub <strong>ini</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2finiLoad"></a>
+<a name="robo6"></a><h2>dwh_tool/iniLoad [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>iniLoad</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>iniLoad</strong>
+{
+    my ( $inFileName ) = @_;
+    die "File '$inFileName' does not exist, aborting\n" if ( not -e $inFileName );
+    print "<strong>iniLoad</strong>($inFileName)\n";
+    open my $inFile, "&lt;$inFileName" or die "'$inFileName': $!\n";
+    while ( my $line = &lt;$inFile&gt; ) {
+        $line =~ s/\R//;    # strip line end
+        next unless $line;
+        if ( $line =~ m/^table\.(.*)\.separator[:=]\s*"(.*)"/i ) {
+            my ( $table, $separator ) = ( lc( $1 ), $2 );
+            $data-&gt;{$table}-&gt;{separator} = $separator;
+        } elsif ( $line =~ m/^default.separator[:=]\s*"(.*)"/i ) {
+            my ( $separator ) = ( $1 );
+            $data-&gt;{_defaults}-&gt;{separator} = $separator;
+
+            # table.a_export_strg.field.ZIELADRESSE.restriction: "validIp"
+        } elsif ( $line =~ m/^table\.(.*)\.field\.(.*)\.restriction[:=]\s*"(.*)"/i ) {
+            my ( $table, $field, $value ) = ( lc( $1 ), $2, $3 );
+            $data-&gt;{ddl}-&gt;{$table}-&gt;{names}-&gt;{$field}-&gt;{otherRestrictions} = $value;
+        }
+
+    } ### while ( my $line = &lt;$inFile&gt;)
+        # print Dumper($data);
+    close $inFile;
+} ### sub <strong>iniLoad</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fjoinArray"></a>
+<a name="robo7"></a><h2>dwh_tool/joinArray [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>joinArray</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>joinArray</strong>
+{
+
+    my $str;
+
+    $str = '"a","b0,b1,b2",3,4';
+    my @values = split( /,/, $str );
+    print "$str: \n" . Dumper( @values );
+
+    my @valuesOut;
+    my $in;
+    my $joined;
+    my $join = 0;
+    for my $index ( 0 .. $#values ) {
+        my $value = $values[$index];
+
+        # "a"
+        if ( $value =~ m/^"/ and $value =~ m/"$/ ) {
+            push( @valuesOut, $value );
+            $join = 0;
+
+            # "b0
+        } elsif ( not $join and ( $value !~ m/^"/ and $value !~ m/"$/ ) ) {
+            push( @valuesOut, $value );
+            $join = 0;
+
+        } elsif ( $value =~ m/^"/ and $value !~ m/"$/ ) {
+            $join   = 1;
+            $joined = "$value,";
+
+            # b1
+        } elsif ( $join and ( $value !~ m/^"/ and $value !~ m/"$/ ) ) {
+            $joined .= "$value,";
+
+            # b2"
+        } elsif ( $join and ( $value !~ m/^"/ and $value =~ m/"$/ ) ) {
+            $joined .= "$value";
+            push( @valuesOut, $joined );
+            $join = 0;
+        }
+    } ### for my $index ( 0 .. $#values)
+    print "$str: \n" . Dumper( @valuesOut );
+} ### sub <strong>joinArray</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fmain"></a>
+<a name="robo8"></a><h2>dwh_tool/main [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>main</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>main</strong>
+{
+    <a href="#robo5">ini</a>();
+
+}
+</pre>
+
+<hr />
+<a name="dwh5ftool2fparseAndSaveRecord"></a>
+<a name="robo9"></a><h2>dwh_tool/parseAndSaveRecord [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>parseAndSaveRecord</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>parseAndSaveRecord</strong>
+{
+    my ( $table, $inFileName, $outFileName ) = @_;
+    my $row = <a href="#robo11">parseInputRecord</a>( $table, $inFileName );
+    return unless ($row);
+    open my $outFile, "&gt;$outFileName" or die "'$outFileName': $!\n";
+    print $outFile "$row\n";
+    close $outFile;
+
+}
+</pre>
+
+<hr />
+<a name="dwh5ftool2fparseDdlFile"></a>
+<a name="robo10"></a><h2>dwh_tool/parseDdlFile [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>parseDdlFile</strong>
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre>   It parses the given ddl file
+</pre>
+<p class="item_name">INPUTS</p>
+<pre>   ddlFile -- the ddlFile to parse
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>parseDdlFile</strong>
+{
+    my ( $ddlFile ) = @_;
+    my $activeBlock = '';
+    my $target      = '';    #target of the block
+    my $index       = 0;
+    print( "<strong>parseDdlFile</strong>($ddlFile)\n" );
+    open my $DDLFILE, "&lt;$ddlFile" or die "'$ddlFile': $!\n";
+    while ( my $line = &lt;$DDLFILE&gt; ) {
+        $line =~ s/\R//;     # strip line end
+        next unless $line;
+
+        # print "<strong>parseDdlFile</strong> loop: [$line]\n";
+
+        if ( not( $activeBlock ) ) {    # not in a block
+            if ( $line =~ m/^CREATE TABLE ".*"."(.*)"/ ) {
+                $activeBlock = "tableCreation";
+                $target      = lc( $1 );
+                $index       = 0;
+
+                # print "activeBlock: '$target'\n";
+            } elsif ( 1 ) {
+            }
+        } elsif ( $activeBlock =~ "tableCreation" ) {
+
+            #             "ZIELSYSTEM" VARCHAR(30) NOT NULL WITH DEFAULT '  ' ,
+            if ( $line =~ m/\s*"(.*)" (.*) ([,)]) / ) {
+                my $key   = $1;
+                my $value = $2;
+                my $comma = $3;
+
+                # parse type
+                my $type;
+                my $length;
+
+                # VARCHAR(5) WITH DEFAULT '2'
+                # CHAR(5) WITH DEFAULT 'DEL'
+                if ( $value =~ m/((var)?char)\((\d+)\)/i ) {
+                    $type   = lc( $1 );
+                    $length = $3;
+                } elsif ( $value =~ m/(integer)/i ) {
+                    $type   = lc( $1 );
+                    $length = 11;
+                }
+
+                if ( $value =~ m/( not null )/i ) {
+                    $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{notNull} = 1;
+                } else {
+
+                    # validIp \d +;
+                }
+
+                # INTEGER WITH DEFAULT 22
+
+                $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{notNull} = 0 if not defined $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{notNull};
+                $data-&gt;{ddl}-&gt;{$target}-&gt;{indexes}-&gt;{$index} = $key;
+
+                # print( " $index: $key\n" );
+                $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{type}              = $type;
+                $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{length}            = $length;
+                $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{otherRestrictions} = ''
+                  unless $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{otherRestrictions};
+                $data-&gt;{ddl}-&gt;{$target}-&gt;{names}-&gt;{$key}-&gt;{original} = $line;
+
+                $index++;
+                if ( $comma ne ',' ) {
+                    $activeBlock = undef;
+                    $target      = undef;
+                    $index       = undef;
+                }
+
+                # print " type: [$type]\n";
+                # print " len: [$length]\n";
+
+                # "SCHNITTSTELLEN_ID" CHAR(12) )
+            } ### if ( $line =~ m/\s*"(.*)" (.*) ([,)]) /([(]))
+
+        } ### elsif ( $activeBlock =~ "tableCreation")
+    } ### while ( my $line = &lt;$DDLFILE&gt;)
+
+    close $DDLFILE;
+
+} ### sub <strong>parseDdlFile</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fparseInputRecord"></a>
+<a name="robo11"></a><h2>dwh_tool/parseInputRecord [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>parseInputRecord</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>parseInputRecord</strong>
+{
+    my ( $table, $inFileName ) = @_;
+    $table = lc( $table );
+
+    print "<strong>parseInputRecord</strong>($table, $inFileName)\n";
+    die "Table $table is not defined in the ddl files.\n" if not defined $data-&gt;{ddl}-&gt;{$table};
+    die "File '$inFileName' does not exist, aborting\n"   if ( not -e $inFileName );
+    my $values = ();
+    open my $inFile, "&lt;$inFileName" or die "'$inFileName': $!\n";
+    while ( my $line = &lt;$inFile&gt; ) {
+        $line =~ s/\R//;    # strip line end
+        next unless $line;
+
+        # print "Line: [$line]\n";
+
+        # ZIELSYSTEM: ""            # VARCHAR(30) NOT NULL WITH DEFAULT '  '
+        if ( $line =~ m/^(.*): "(.*)"/ ) {
+            my ( $key, $value ) = ( $1, $2 );
+            $values-&gt;{$key} = $value;
+        } else {
+            print "Line [$line] skipped\n";
+        }
+    } ### while ( my $line = &lt;$inFile&gt;)
+
+    my $separator = <a href="#robo4">getSeparator</a>( $table );
+    my $row       = "";
+    for my $index ( 0 .. scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) - 1 ) {
+        my $keyName = $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes}-&gt;{$index};
+        my $key     = $data-&gt;{ddl}-&gt;{$table}-&gt;{names}-&gt;{$keyName};
+        if ( not defined( $values-&gt;{$keyName} ) ) {
+            die "Missing value: $keyName\n";
+        }
+        my $value = $values-&gt;{$keyName};
+        if ( $key-&gt;{type} eq 'char' or $key-&gt;{type} eq 'varchar' ) {
+            $row .= "\"$value\"$separator";
+        } else {
+            $row .= "$value$separator";
+        }
+    } ### for my $index ( 0 .. scalar...)
+    $row =~ s/$separator$//;
+    close $inFile;
+
+    print " <strong>parseInputRecord</strong> OK\n";
+    if ( not <a href="#robo1">checkRow</a>( $table, $row ) ) {
+        print "[$row]\n";
+    }else{
+        $row=undef;
+    }
+    return $row;
+
+} ### sub <strong>parseInputRecord</strong>
+</pre>
+
+<hr />
+<a name="dwh5ftool2fusage"></a>
+<a name="robo12"></a><h2>dwh_tool/usage [ Functions ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   <strong>usage</strong>
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">sub <strong>usage</strong>
+{
+    print "<a href="#robo_top_of_doc">dwh_tool.pl</a> -f[unction] FUNCTION [-f[unction] FUNCTION...] -v[erbose] -h[elp]
+  FUNCTION: 
+    - <a href="#robo0">checkCSVFile</a>(INPUTFILE)
+    - <a href="#robo2">demo</a>
+    - <a href="#robo3">generateTemplate</a>(TABLENAME,INPUTFILE)
+    - <a href="#robo10">parseDdlFile</a>(INPUTFILE)
+    - <a href="#robo11">parseInputRecord</a>(TABLENAME,INPUTFILE)
+    - <a href="#robo9">parseAndSaveRecord</a>(TABLENAME,INPUTFILE,OUTPUTFILE)
+
+    ./<a href="#robo_top_of_doc">dwh_tool.pl</a> -f <a href="#robo2">demo</a>
+    ./<a href="#robo_top_of_doc">dwh_tool.pl</a> -f <a href="#robo10">parseDdlFile</a>\\(input/a_batch_input.ddl\\)
+    ./<a href="#robo_top_of_doc">dwh_tool.pl</a> -f <a href="#robo10">parseDdlFile</a>\\(input/a_batch_input.ddl\\) -f <a href="#robo0">checkCSVFile</a>\\(input/d063a_batch_input.dat\\)
+    ./<a href="#robo_top_of_doc">dwh_tool.pl</a> -f <a href="#robo10">parseDdlFile</a>\\(input/a_export_strg.ddl\\) -f <a href="#robo3">generateTemplate</a>\\(a_export_strg,demo_input_a_export_strg.dat\\)
+    ./<a href="#robo_top_of_doc">dwh_tool.pl</a> -f <a href="#robo10">parseDdlFile</a>\\(input/a_export_strg.ddl\\) -f <a href="#robo11">parseInputRecord</a>\\(a_export_strg,demo_input_a_export_strg.dat\\)
+
+
+";
+    exit 0;
+} ### sub <strong>usage</strong>
+</pre>
+
+<hr />
+<a name="getDependencies2fglobalVariables"></a>
+<a name="robo13"></a><h2>getDependencies/globalVariables [ Variables ]</h2>
+
+<p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_variables.html#robo_top_of_doc">Variables</a> ]</p>
+<p class="item_name">NAME</p>
+<pre>   Global variables
+</pre>
+<p class="item_name">SOURCE</p>
+<pre class="source">my $verbose = 0;
+my $data;
+my $g_scriptDir;
+</pre>
+
+</div> <!-- content -->
+<div id="footer">
+<p>Generated from ./dwh_tool.pl with <a href="http://www.xs4all.nl/~rfsber/Robo/robodoc.html">ROBODoc</a> V4.99.43 on Wed Mar 21 2018 08:46:25
+</p>
+</div> <!-- footer -->
+</body>
+</html>
