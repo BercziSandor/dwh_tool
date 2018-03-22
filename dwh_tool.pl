@@ -8,14 +8,15 @@ use Cwd 'abs_path';
 
 $Data::Dumper::Sortkeys = 1;
 
-
 #****v* getDependencies/globalVariables
 # NAME
 #   Global variables
 # SOURCE
 my $verbose = 0;
+my $demo    = 0;
 my $data;
 my $g_scriptDir;
+
 #****
 
 #****f* dwh_tool/parseDdlFile
@@ -109,6 +110,7 @@ sub parseDdlFile
     close $DDLFILE;
 
 } ### sub parseDdlFile
+
 #****
 
 #****f* dwh_tool/checkRow
@@ -124,10 +126,12 @@ sub checkRow
 {
     my ( $table, $row ) = @_;
     $table = lc( $table );
+
+    $row //= "";
+    print "checkRow($table, <$row>)\n" if $verbose;
     die "Table $table is not defined in the ddl files.\n" if not defined $data->{ddl}->{$table};
     die "Row is empty\n" unless $row;
 
-    print "checkRow($table, <$row>)\n" if $verbose;
     my $errCnt = 0;
 
     my $separator = getSeparator( $table );
@@ -212,6 +216,7 @@ sub checkRow
     # print Dumper( @values );
     return $errCnt;
 } ### sub checkRow
+
 #****
 
 #****f* dwh_tool/checkCSVFile
@@ -225,6 +230,9 @@ sub checkRow
 sub checkCSVFile
 {
     my ( $controlFileName ) = @_;
+
+    my $errCnt=0;
+
     open my $controlFile, "<$controlFileName" or die "'$controlFileName': $!\n";
 
     my $table = basename( $controlFileName );
@@ -247,13 +255,15 @@ sub checkCSVFile
         } ### if ( not( $separator ))
 
         if ( checkRow( $table, $line ) ) {
-            print "Errorfile write!\n";
             print $errorFile "$line\n";
+            $errCnt++;
         }
     } ### while ( my $line = <$controlFile>)
     close $errorFile;
     close $controlFile;
+    return $errCnt;
 } ### sub checkCSVFile
+
 #****
 
 # DESCRIPTION
@@ -261,7 +271,7 @@ sub checkCSVFile
 # INPUTS
 #   input file -- the input (CSV) file to be validated
 # RESULT
-#   The separator used for the given table 
+#   The separator used for the given table
 #****f* dwh_tool/getSeparator
 # NAME
 #   getSeparator
@@ -278,6 +288,7 @@ sub getSeparator
     # print "getSeparator($table): $retval\n";
     return $retval;
 } ### sub getSeparator
+
 #****
 
 #****f* dwh_tool/joinArray
@@ -327,6 +338,7 @@ sub joinArray
     } ### for my $index ( 0 .. $#values)
     print "$str: \n" . Dumper( @valuesOut );
 } ### sub joinArray
+
 #****
 
 #****f* dwh_tool/generateTemplate
@@ -373,6 +385,7 @@ sub generateTemplate
     } ### for my $index ( 0 .. scalar...)
     close $outFile;
 } ### sub generateTemplate
+
 #****
 
 #****f* dwh_tool/parseInputRecord
@@ -423,14 +436,18 @@ sub parseInputRecord
     close $inFile;
 
     print " parseInputRecord OK\n";
-    if ( not checkRow( $table, $row ) ) {
-        print "[$row]\n";
-    }else{
-        $row=undef;
-    }
+
+    # check is NOT made
+    # if ( not checkRow( $table, $row ) ) {
+    #     print "[$row]\n";
+    # } else {
+    #     $row = undef;
+    # }
+
     return $row;
 
 } ### sub parseInputRecord
+
 #****
 
 #****f* dwh_tool/parseAndSaveRecord
@@ -441,12 +458,13 @@ sub parseAndSaveRecord
 {
     my ( $table, $inFileName, $outFileName ) = @_;
     my $row = parseInputRecord( $table, $inFileName );
-    return unless ($row);
+    return unless ( $row );
     open my $outFile, ">$outFileName" or die "'$outFileName': $!\n";
     print $outFile "$row\n";
     close $outFile;
 
-}
+} ### sub parseAndSaveRecord
+
 #****
 
 #****f* dwh_tool/iniLoad
@@ -479,6 +497,7 @@ sub iniLoad
         # print Dumper($data);
     close $inFile;
 } ### sub iniLoad
+
 #****
 
 #****f* dwh_tool/demo
@@ -493,17 +512,20 @@ sub demo
     if ( checkRow( "a_export_strg", $row ) ) {
         warn "There might be a problem in the row, please check it.\n";
     } else {
-        print "Row seems to be OK. ;)";
+        print "Row seems to be valid.\n";
     }
+    print "\n";
 
     parseDdlFile( "input/a_batch_input.ddl" );
     checkCSVFile( 'input/d063a_batch_input.dat' );
 
     parseDdlFile( "input/a_batch_input.ddl" );
     checkCSVFile( 'input/d063a_batch_input.dat' );
-#****
+
+    #****
 
 } ### sub demo
+
 #****
 
 #****f* dwh_tool/usage
@@ -531,6 +553,7 @@ sub usage
 ";
     exit 0;
 } ### sub usage
+
 #****
 
 #****f* dwh_tool/ini
@@ -551,6 +574,7 @@ sub ini
     );
 
     usage() if ( $help );
+    demo()  if ( $demo );
 
     if ( scalar( @functions ) == 0 ) {
         warn "You have to define at least one function.\n";
@@ -569,7 +593,7 @@ sub ini
         } elsif ( $function =~ m/parseInputRecord\((.*),(.*)\)/i ) {
             parseInputRecord( $1, $2 );
         } elsif ( $function =~ m/parseAndSaveRecord\((.*),(.*),(.*)\)/i ) {
-            parseAndSaveRecord( $1, $2,$3 );
+            parseAndSaveRecord( $1, $2, $3 );
         } else {
             warn "Warning: Unknown function call: $function\n";
             usage;
@@ -577,6 +601,7 @@ sub ini
     } ### foreach my $function ( @functions)
 
 } ### sub ini
+
 #****
 
 #****f* dwh_tool/main
@@ -588,6 +613,8 @@ sub main
     ini();
 
 }
+
 #****
 
+$demo = 1;
 main();
