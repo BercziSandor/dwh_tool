@@ -8,7 +8,6 @@ use Cwd 'abs_path';
 
 $Data::Dumper::Sortkeys = 1;
 
-
 #****v* getDependencies/globalVariables
 # NAME
 #   Global variables
