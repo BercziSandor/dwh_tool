@@ -19,9 +19,9 @@ FUNCTIONS
 
 Examples:
   ./dwh_tool.pl -f demo
-  ./dwh_tool.pl -f parseDdlFile\\(input/a_batch_input.ddl\\)
-  ./dwh_tool.pl -f parseDdlFile\\(input/a_batch_input.ddl\\) -f checkCSVFile\\(input/d063a_batch_input.dat\\)
-  ./dwh_tool.pl -f parseDdlFile\\(input/a_export_strg.ddl\\) -f generateTemplate\\(a_export_strg,input/demo_input_a_export_strg.dat\\)
-  ./dwh_tool.pl -f parseDdlFile\\(input/a_export_strg.ddl\\) -f parseInputRecord\\(a_export_strg,input/demo_input_a_export_strg.dat\\)
-  ./dwh_tool.pl -f parseDdlFile\\(input/a_export_strg.ddl\\) -f parseAndSaveRecord\\(a_export_strg,input/demo_input_a_export_strg.dat,demo_output_a_export_strg.dat\\)
+  ./dwh_tool.pl -f parseDdlFile\(input/a_batch_input.ddl\)
+  ./dwh_tool.pl -f parseDdlFile\(input/a_batch_input.ddl\) -f checkCSVFile\(input/d063a_batch_input.dat\)
+  ./dwh_tool.pl -f parseDdlFile\(input/a_export_strg.ddl\) -f generateTemplate\(a_export_strg,input/demo_input_a_export_strg.dat\)
+  ./dwh_tool.pl -f parseDdlFile\(input/a_export_strg.ddl\) -f parseInputRecord\(a_export_strg,input/demo_input_a_export_strg.dat\)
+  ./dwh_tool.pl -f parseDdlFile\(input/a_export_strg.ddl\) -f parseAndSaveRecord\(a_export_strg,input/demo_input_a_export_strg.dat,demo_output_a_export_strg.dat\)
 ~~~
