@@ -40,13 +40,17 @@
 <pre class="source">sub <strong>checkCSVFile</strong>
 {
     my ( $controlFileName ) = @_;
+
+    my $errCnt = 0;
+
     open my $controlFile, "&lt;$controlFileName" or die "'$controlFileName': $!\n";
 
     my $table = basename( $controlFileName );
     $table =~ s/d\d+(.*)\.dat/$1/;
 
     print( "<strong>checkCSVFile</strong>($controlFileName, $table)\n" );
-    open my $errorFile, "&gt;${controlFileName}.error" or die "'${controlFileName}.error': $!\n";
+    my $errorFileName = "${controlFileName}.error";
+    open my $errorFile, "&gt;${errorFileName}" or die "'${errorFileName}': $!\n";
 
     while ( my $line = &lt;$controlFile&gt; ) {
         $line =~ s/\R//;    # strip line end
@@ -62,12 +66,21 @@
         } ### if ( not( $separator ))
 
         if ( <a href="#robo1">checkRow</a>( $table, $line ) ) {
-            print "Errorfile write!\n";
             print $errorFile "$line\n";
+            $errCnt++;
         }
     } ### while ( my $line = &lt;$controlFile&gt;)
     close $errorFile;
     close $controlFile;
+    if ( $errCnt == 0 ) {
+        print "There is NO error in the file $controlFileName.\n";
+    } elsif ( $errCnt == 1 ) {
+        print "There is an error in the file $controlFileName. You can see the incorrect row here: $errorFileName\n";
+    } else {
+        print "There are $errCnt errors in the file $controlFileName. You can see the incorrect row(s) here: $errorFileName\n";
+    }
+
+    return $errCnt;
 } ### sub <strong>checkCSVFile</strong>
 </pre>
 
@@ -80,7 +93,8 @@
 <pre>   <strong>checkRow</strong>
 </pre>
 <p class="item_name">DESCRIPTION</p>
-<pre>   It checks the given row for errors agains ddl (length, "", type, etc) and other given rules (example: validIp) defined in the <a href="#robo5">ini</a> file.
+<pre>  It checks the given row for errors agains ddl (length, "", type, etc) and other given rules (validIp, notNull) defined in the <a href="#robo5">ini</a> file.
+  Other extra checks can be:  notEmptyIfNotEmpty(OTHERFIELD) - the field set in the <a href="#robo5">ini</a> file must not be empty if another field is filled.
 </pre>
 <p class="item_name">INPUTS</p>
 <pre>   table -- the name of the table validate again
@@ -91,10 +105,12 @@
 {
     my ( $table, $row ) = @_;
     $table = lc( $table );
+
+    $row //= "";
+    print "<strong>checkRow</strong>($table, &lt;$row&gt;)\n";
     die "Table $table is not defined in the ddl files.\n" if not defined $data-&gt;{ddl}-&gt;{$table};
     die "Row is empty\n" unless $row;
 
-    print "<strong>checkRow</strong>($table, &lt;$row&gt;)\n" if $verbose;
     my $errCnt = 0;
 
     my $separator = <a href="#robo4">getSeparator</a>( $table );
@@ -111,31 +127,28 @@
         warn "The given row does not have " . scalar( keys %{ $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes} } ) . " vs: " . scalar( @values );
     } ### if ( scalar( keys %{ $data...}))
 
+    # We store all values in this hash
+    my $rowData;
     for my $index ( 0 .. $#values ) {
         my $value = $values[$index];
 
         my $keyName = $data-&gt;{ddl}-&gt;{$table}-&gt;{indexes}-&gt;{$index};
         die "Index $index not defined for $table.\n" unless $keyName;
         my $key = $data-&gt;{ddl}-&gt;{$table}-&gt;{names}-&gt;{$keyName};
+        $rowData-&gt;{$keyName}-&gt;{index} = $index;
+        $rowData-&gt;{$keyName}-&gt;{otherRestrictions} = $key-&gt;{otherRestrictions};
 
-        print "\n$table.$keyName='$value'\n" if $verbose;
 
         # char, varchar must be delimited by "
         if ( $key-&gt;{type} eq 'char' or $key-&gt;{type} eq 'varchar' ) {
             if ( $value ) {
-                if ( $value !~ m/^"/ ) {
-                    print "\n$table.$keyName='$value'\n" if not $verbose;
-                    print " Error: value [$value] must be surrounded by \"-s\n";
-                    $errCnt++;
-                }
-                if ( $value !~ m/"$/ ) {
+                if ( $value !~ m/^".*"$/ ) {
                     print "\n$table.$keyName='$value'\n" if not $verbose;
                     print " Error: value [$value] must be surrounded by \"-s\n";
                     $errCnt++;
                 }
             } ### if ( $value )
-            $value =~ s/^"//;
-            $value =~ s/"$//;
+                $value =~ s/^"(.*)"$/$1/;
         } elsif ( $key-&gt;{type} eq 'integer' ) {
             if ( $value =~ m/\D/ ) {
                 print "\n$table.$keyName='$value'\n" if not $verbose;
@@ -143,6 +156,8 @@
                 $errCnt++;
             }
         } ### elsif ( $key-&gt;{type} eq 'integer')
+        $rowData-&gt;{$keyName}-&gt;{value} = $value;
+        print "\n$table.$keyName='$value'\n" if $verbose;
 
         if ( $key-&gt;{length} and $key-&gt;{length} &lt; length( $value ) ) {
             print "\n$table.$keyName='$value'\n" if not $verbose;
@@ -155,7 +170,7 @@
             print " OK:    lenght <strong>checkRow</strong> (" . length( $value ) . " &lt;= $key-&gt;{length})\n" if $verbose;
         }
         if ( $key-&gt;{otherRestrictions} ) {
-            if ( $key-&gt;{otherRestrictions} =~ m/validIp/i ) {
+            if ( $key-&gt;{otherRestrictions} =~ m/validIp\s*($|,)/i ) {
                 if ( $value =~ m/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/ ) {
                     my ( $d1, $d2, $d3, $d4 ) = ( $1, $2, $3, $4 );
                     if ( $d1 == 0 or $d2 == 0 or $d3 == 0 or $d4 == 0 or $d1 &gt; 254 or $d2 &gt; 254 or $d3 &gt; 254 or $d4 &gt; 254 ) {
@@ -172,9 +187,36 @@
                 }
             } ### if ( $key-&gt;{otherRestrictions...})
         } ### if ( $key-&gt;{otherRestrictions...})
+        if ( $key-&gt;{otherRestrictions} =~ m/notNull\s*(,\$)/i ) {
+            if ( not $value ) {
+                print "\n$table.$keyName='$value'\n" if not $verbose;
+                print " Error: must not null - it is\n";
+                $errCnt++;
+            }
+        } ### if ( $key-&gt;{otherRestrictions...})
 
         # $value;
     } ### for my $index ( 0 .. $#values)
+
+    print "Second check...\n" if $verbose;
+    foreach my $thisField ( keys %{$rowData} ) {
+        next unless $rowData-&gt;{$thisField}-&gt;{otherRestrictions};
+        print "$thisField.otherRestrictions: $rowData-&gt;{$thisField}-&gt;{otherRestrictions}\n" if $verbose;
+
+        if ( $rowData-&gt;{$thisField}-&gt;{otherRestrictions} =~ m/notEmptyIfNotEmpty\((.*)\)/i ) {
+            my $otherField = $1;
+            print " -&gt; $otherField: [" . $rowData-&gt;{$otherField}-&gt;{value} . "]\n" if $verbose;
+
+            if ( $rowData-&gt;{$otherField}-&gt;{value} ) {
+
+                if ( not $rowData-&gt;{$thisField}-&gt;{value} ) {
+                        print "\n$table.$thisField=''\n" if not $verbose;
+                    print " Error: the field $thisField must not be empty if field $otherField is filled.\n";
+                    $errCnt++;
+                }
+            } ### if ( $rowData-&gt;{$otherField...})
+        } ### if ( $rowData-&gt;{$thisField...})
+    } ### foreach my $thisField ( keys...)
 
     # print Dumper( @values );
     return $errCnt;
@@ -192,20 +234,31 @@
 <p class="item_name">SOURCE</p>
 <pre class="source">sub <strong>demo</strong>
 {
+    print "\n*********************** DEMO *****************\n";
+    resetData();
+    print "\n1: ***********************\n";
     <a href="#robo10">parseDdlFile</a>( "input/a_export_strg.ddl" );
 
     my $row = <a href="#robo11">parseInputRecord</a>( "a_export_strg", "input/demo_input_a_export_strg.dat" );
     if ( <a href="#robo1">checkRow</a>( "a_export_strg", $row ) ) {
         warn "There might be a problem in the row, please check it.\n";
     } else {
-        print "Row seems to be OK. ;)";
+        print "Row seems to be valid.\n";
     }
+    resetData();
+    print "\n";
 
+    print "\n2: ***********************\n";
     <a href="#robo10">parseDdlFile</a>( "input/a_batch_input.ddl" );
     <a href="#robo0">checkCSVFile</a>( 'input/d063a_batch_input.dat' );
+    resetData();
 
+    print "\n3: ***********************\n";
     <a href="#robo10">parseDdlFile</a>( "input/a_batch_input.ddl" );
     <a href="#robo0">checkCSVFile</a>( 'input/d063a_batch_input.dat' );
+    resetData();
+
+    print "\nEnd of <strong>demo</strong> ***********************\n";
 </pre>
 
 <hr />
@@ -217,7 +270,8 @@
 <pre>   <strong>generateTemplate</strong>
 </pre>
 <p class="item_name">DESCRIPTION</p>
-<pre>   It generates a template for the given table in readable form.
+<pre>   It generates a template for the given table in readable form. Order of the fields is not relevant.
+   Output format: [key: value]
 </pre>
 <p class="item_name">INPUTS</p>
 <pre>   table   -- the table ;)
@@ -269,6 +323,12 @@
 <p class="item_name">NAME</p>
 <pre>   <strong>getSeparator</strong>
 </pre>
+<p class="item_name">INPUTS</p>
+<pre>   table -- the table for which you want to have the separator
+</pre>
+<p class="item_name">RESULT</p>
+<pre>   The separator used for the given table
+</pre>
 <p class="item_name">SOURCE</p>
 <pre class="source">sub <strong>getSeparator</strong>
 {
@@ -307,12 +367,12 @@
     );
 
     <a href="#robo12">usage</a>() if ( $help );
+    <a href="#robo2">demo</a>()  if ( $<a href="#robo2">demo</a> );
 
     if ( scalar( @functions ) == 0 ) {
         warn "You have to define at least one function.\n";
         <a href="#robo12">usage</a>();
     }
-
     foreach my $function ( @functions ) {
         if ( $function eq '<a href="#robo2">demo</a>' ) {
             <a href="#robo2">demo</a>();
@@ -320,14 +380,15 @@
             <a href="#robo10">parseDdlFile</a>( $1 );
         } elsif ( $function =~ m/<a href="#robo0">checkCSVFile</a>\((.*)\)/i ) {
             <a href="#robo0">checkCSVFile</a>( $1 );
-        } elsif ( $function =~ m/<a href="#robo3">generateTemplate</a>\((.*),(.*)\)/i ) {
+        } elsif ( $function =~ m/<a href="#robo3">generateTemplate</a>\((.*),\s*(.*)\)/i ) {
             <a href="#robo3">generateTemplate</a>( $1, $2 );
-        } elsif ( $function =~ m/<a href="#robo11">parseInputRecord</a>\((.*),(.*)\)/i ) {
+        } elsif ( $function =~ m/<a href="#robo11">parseInputRecord</a>\((.*),\s*(.*)\)/i ) {
             <a href="#robo11">parseInputRecord</a>( $1, $2 );
-        } elsif ( $function =~ m/<a href="#robo9">parseAndSaveRecord</a>\((.*),(.*),(.*)\)/i ) {
-            <a href="#robo9">parseAndSaveRecord</a>( $1, $2,$3 );
+        } elsif ( $function =~ m/<a href="#robo9">parseAndSaveRecord</a>\((.*),\s*(.*),\s*(.*)\)/i ) {
+            <a href="#robo9">parseAndSaveRecord</a>( $1, $2, $3 );
         } else {
             warn "Warning: Unknown function call: $function\n";
+            print Dumper( @functions );
             <a href="#robo12">usage</a>;
         }
     } ### foreach my $function ( @functions)
@@ -342,6 +403,14 @@
 <p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
 <p class="item_name">NAME</p>
 <pre>   <strong>iniLoad</strong>
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre> It loads <a href="#robo5">ini</a> file containing settings.
+ It can parse the following type of input:
+ - default.separator: SEPARATOR
+ - table.TABLENAME.separator: SEPARATOR
+ - table.TABLENAME.field.FIELDNAME.restriction: RESTRICTION
+   for RESTRICTION see <a href="#robo1">checkRow</a>
 </pre>
 <p class="item_name">SOURCE</p>
 <pre class="source">sub <strong>iniLoad</strong>
@@ -367,7 +436,8 @@
         }
 
     } ### while ( my $line = &lt;$inFile&gt;)
-        # print Dumper($data);
+
+    # print Dumper($data);
     close $inFile;
 } ### sub <strong>iniLoad</strong>
 </pre>
@@ -379,6 +449,9 @@
 <p>[ <a href="#robo_top_of_doc">Top</a> ] [ <a href="./robo_functions.html#robo_top_of_doc">Functions</a> ]</p>
 <p class="item_name">NAME</p>
 <pre>   <strong>joinArray</strong>
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre>   Utility function, not used.
 </pre>
 <p class="item_name">SOURCE</p>
 <pre class="source">sub <strong>joinArray</strong>
@@ -450,17 +523,26 @@
 <p class="item_name">NAME</p>
 <pre>   <strong>parseAndSaveRecord</strong>
 </pre>
+<p class="item_name">INPUTS</p>
+<pre>   table   -- the table name, type of the record to be parsed
+   inFile  -- the input file containing the record
+   outFile -- the output file
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre>  This function is based on <a href="#robo11">parseInputRecord</a>: the record will be parsed by <a href="#robo11">parseInputRecord</a> and the output row will
+  be written into the output file.
+</pre>
 <p class="item_name">SOURCE</p>
 <pre class="source">sub <strong>parseAndSaveRecord</strong>
 {
     my ( $table, $inFileName, $outFileName ) = @_;
     my $row = <a href="#robo11">parseInputRecord</a>( $table, $inFileName );
-    return unless ($row);
+    return unless ( $row );
     open my $outFile, "&gt;$outFileName" or die "'$outFileName': $!\n";
     print $outFile "$row\n";
     close $outFile;
 
-}
+} ### sub <strong>parseAndSaveRecord</strong>
 </pre>
 
 <hr />
@@ -472,7 +554,7 @@
 <pre>   <strong>parseDdlFile</strong>
 </pre>
 <p class="item_name">DESCRIPTION</p>
-<pre>   It parses the given ddl file
+<pre>   It parses the given db2 ddl file. The ddl file is generated by xxxx TODO.
 </pre>
 <p class="item_name">INPUTS</p>
 <pre>   ddlFile -- the ddlFile to parse
@@ -497,6 +579,12 @@
                 $activeBlock = "tableCreation";
                 $target      = lc( $1 );
                 $index       = 0;
+                if ( defined $data-&gt;{ddl}-&gt;{$target}-&gt;{indexes} ) {
+                    print Dumper( $data );
+                    die "The ddl for the table $target already loaded, aborting.\n";
+
+                    # $data-&gt;{ddl}-&gt;{$target} = ();
+                } ### if ( defined $data-&gt;{ddl...})
 
                 # print "activeBlock: '$target'\n";
             } elsif ( 1 ) {
@@ -571,6 +659,14 @@
 <p class="item_name">NAME</p>
 <pre>   <strong>parseInputRecord</strong>
 </pre>
+<p class="item_name">INPUTS</p>
+<pre>   table   -- the table name, type of the record to be parsed
+   inFile  -- the input file containing the record
+</pre>
+<p class="item_name">DESCRIPTION</p>
+<pre>   It reads an input record.
+   Input format: [key: value]
+</pre>
 <p class="item_name">SOURCE</p>
 <pre class="source">sub <strong>parseInputRecord</strong>
 {
@@ -586,14 +682,14 @@
         $line =~ s/\R//;    # strip line end
         next unless $line;
 
-        # print "Line: [$line]\n";
+        print "Line: [$line]\n" if $verbose;
 
         # ZIELSYSTEM: ""            # VARCHAR(30) NOT NULL WITH DEFAULT '  '
         if ( $line =~ m/^(.*): "(.*)"/ ) {
             my ( $key, $value ) = ( $1, $2 );
             $values-&gt;{$key} = $value;
         } else {
-            print "Line [$line] skipped\n";
+            print "Line [$line] skipped\n" if $verbose;
         }
     } ### while ( my $line = &lt;$inFile&gt;)
 
@@ -615,12 +711,16 @@
     $row =~ s/$separator$//;
     close $inFile;
 
+    print "row: [$row]\n" if $verbose;
     print " <strong>parseInputRecord</strong> OK\n";
+
+    # check is NOT made till now
     if ( not <a href="#robo1">checkRow</a>( $table, $row ) ) {
         print "[$row]\n";
-    }else{
-        $row=undef;
+    } else {
+        $row = undef;
     }
+
     return $row;
 
 } ### sub <strong>parseInputRecord</strong>
@@ -668,13 +768,14 @@
 </pre>
 <p class="item_name">SOURCE</p>
 <pre class="source">my $verbose = 0;
+my $<a href="#robo2">demo</a>    = 0;
 my $data;
 my $g_scriptDir;
 </pre>
 
 </div> <!-- content -->
 <div id="footer">
-<p>Generated from ./dwh_tool.pl with <a href="http://www.xs4all.nl/~rfsber/Robo/robodoc.html">ROBODoc</a> V4.99.43 on Thu Mar 22 2018 14:38:49
+<p>Generated from ./dwh_tool.pl with <a href="http://www.xs4all.nl/~rfsber/Robo/robodoc.html">ROBODoc</a> V4.99.43 on Mon Mar 26 2018 09:50:37
 </p>
 </div> <!-- footer -->
 </body>
