@@ -5,6 +5,8 @@ use warnings;
 use Data::Dumper;
 use File::Basename;
 use Cwd 'abs_path';
+use Getopt::Long;
+
 
 $Data::Dumper::Sortkeys = 1;
 
@@ -647,7 +649,6 @@ sub ini
 {
     $g_scriptDir = abs_path( dirname( __FILE__ ) );
     iniLoad( "$g_scriptDir/dwh_tool.ini" );
-    use Getopt::Long;
     my $help;
     my @functions;
     GetOptions(
